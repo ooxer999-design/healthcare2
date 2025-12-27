@@ -125,6 +125,11 @@
                     <option value="morning">Morning Shift (8:00 AM - 4:00 PM)</option>
                     <option value="evening">Evening Shift (3:30 PM - 11:30 PM)</option>
                 </select>
+                <label for="visible-to">Visible to:</label>
+                <select id="visible-to" multiple size="5">
+                    <option value="all" selected>All Employees</option>
+                </select>
+                <div class="info">Hold Ctrl (or Cmd on Mac) to select multiple employees. If "All Employees" is selected, others will be ignored.</div>
                 <button type="submit">Add Shift Group</button>
             </form>
 
@@ -132,6 +137,7 @@
             <table id="all-shifts-table">
                 <thead>
                     <tr>
+                        <th>Visible To</th>
                         <th>Center</th>
                         <th>Week Period</th>
                         <th>Shift Type</th>
@@ -183,7 +189,7 @@
 
     <script>
         let employees = JSON.parse(localStorage.getItem('employees')) || [];
-        let shiftGroups = JSON.parse(localStorage.getItem('shiftGroups')) || [];
+        let shiftGroups = JSON.parse(localStorage.getItem('shiftGroups')) || []; // {id, center, start, end, type, takenBy, visibleTo: ['all'] or array of usernames}
 
         let currentEmployee = null;
         const today = new Date();
@@ -218,6 +224,18 @@
             return new Date(endDate) < today;
         }
 
+        // تحديث قائمة الموظفين في select الـ visible-to
+        function updateVisibleToSelect() {
+            const select = document.getElementById('visible-to');
+            select.innerHTML = '<option value="all" selected>All Employees</option>';
+            employees.forEach(emp => {
+                const option = document.createElement('option');
+                option.value = emp.username;
+                option.textContent = emp.username;
+                select.appendChild(option);
+            });
+        }
+
         function displayEmployeesList() {
             const tbody = document.querySelector('#employees-table tbody');
             tbody.innerHTML = '';
@@ -232,10 +250,12 @@
             const tbody = document.querySelector('#all-shifts-table tbody');
             tbody.innerHTML = '';
             shiftGroups.forEach(group => {
+                const visible = group.visibleTo.includes('all') ? 'All Employees' : group.visibleTo.join(', ');
                 const taken = group.takenBy ? group.takenBy : '-';
                 const timeInfo = shiftTimes[group.type];
                 const row = document.createElement('tr');
                 row.innerHTML = `
+                    <td>${visible}</td>
                     <td>${group.center}</td>
                     <td>${formatWeekPeriod(group.start, group.end)}</td>
                     <td>${timeInfo.name}</td>
@@ -268,6 +288,10 @@
 
             shiftGroups.forEach(group => {
                 if (isShiftExpired(group.end)) return;
+
+                // التحقق من الرؤية
+                const isVisible = group.visibleTo.includes('all') || group.visibleTo.includes(currentEmployee);
+                if (!isVisible) return;
 
                 const isTaken = group.takenBy !== null;
                 const takenByMe = group.takenBy === currentEmployee;
@@ -336,6 +360,45 @@
             });
         }
 
+        // إضافة شفت مع قائمة الرؤية
+        document.getElementById('add-shift-form').addEventListener('submit', e => {
+            e.preventDefault();
+            const center = document.getElementById('center-name').value.trim();
+            const start = document.getElementById('week-start').value;
+            const type = document.getElementById('shift-type').value;
+            const visibleSelect = document.getElementById('visible-to');
+            const selectedOptions = Array.from(visibleSelect.selectedOptions).map(opt => opt.value);
+
+            if (!center || !start || !type) {
+                alert('Please fill all fields');
+                return;
+            }
+
+            const end = getThursdayFromSunday(start);
+            if (!end) return;
+
+            let visibleTo = selectedOptions.includes('all') ? ['all'] : selectedOptions;
+
+            shiftGroups.push({
+                id: getNextId(),
+                center,
+                start,
+                end,
+                type,
+                takenBy: null,
+                visibleTo
+            });
+
+            localStorage.setItem('shiftGroups', JSON.stringify(shiftGroups));
+            displayAllShifts();
+            alert('Shift group added successfully!');
+
+            document.getElementById('center-name').value = '';
+            document.getElementById('week-start').value = '';
+            document.getElementById('shift-type').value = '';
+            visibleSelect.selectedIndex = 0; // إعادة اختيار "All"
+        });
+
         document.getElementById('emp-login-form-main').addEventListener('submit', e => {
             e.preventDefault();
             const username = document.getElementById('emp-login-username-main').value.trim();
@@ -352,38 +415,6 @@
             }
         });
 
-        document.getElementById('add-shift-form').addEventListener('submit', e => {
-            e.preventDefault();
-            const center = document.getElementById('center-name').value.trim();
-            const start = document.getElementById('week-start').value;
-            const type = document.getElementById('shift-type').value;
-
-            if (!center || !start || !type) {
-                alert('Please fill all fields');
-                return;
-            }
-
-            const end = getThursdayFromSunday(start);
-            if (!end) return;
-
-            shiftGroups.push({
-                id: getNextId(),
-                center,
-                start,
-                end,
-                type,
-                takenBy: null
-            });
-
-            localStorage.setItem('shiftGroups', JSON.stringify(shiftGroups));
-            displayAllShifts();
-            alert('Shift group added successfully!');
-
-            document.getElementById('center-name').value = '';
-            document.getElementById('week-start').value = '';
-            document.getElementById('shift-type').value = '';
-        });
-
         document.getElementById('admin-login-form').addEventListener('submit', e => {
             e.preventDefault();
             const username = document.getElementById('admin-username').value;
@@ -392,6 +423,7 @@
                 document.getElementById('main-login').classList.add('hidden');
                 document.getElementById('admin-login-section').classList.add('hidden');
                 document.getElementById('admin-section').classList.remove('hidden');
+                updateVisibleToSelect();
                 displayEmployeesList();
                 displayAllShifts();
             } else {
@@ -414,6 +446,7 @@
             employees.push({ username, password });
             localStorage.setItem('employees', JSON.stringify(employees));
             displayEmployeesList();
+            updateVisibleToSelect();
             alert('Employee added successfully');
             document.getElementById('emp-username').value = '';
             document.getElementById('emp-password').value = '';
@@ -472,6 +505,7 @@
             document.getElementById('admin-login-section').classList.remove('hidden');
         }
 
+        updateVisibleToSelect();
         displayAllShifts();
         displayEmployeesList();
     </script>
